@@ -1,9 +1,20 @@
 import yfinance as yf
 import ta
 import os
+from threading import Thread
+from flask import Flask
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+
 TOKEN = os.getenv("BOT_TOKEN")
+
+# Biar Render gak bilang port gak kebuka
+app_flask = Flask(__name__)
+@app_flask.route('/')
+def home(): return "Bot wowi_bot jalan!"
+
+def run_flask():
+    app_flask.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
 
 def get_analisa(ticker):
     ticker = ticker.upper().strip()
@@ -19,19 +30,15 @@ def get_analisa(ticker):
     levels = sorted(fibo.values(), reverse=True)
     idx = min(range(len(levels)), key=lambda i: abs(levels[i]-price))
     resistances = levels[:idx]; supports = levels[idx+1:]
-    tp1 = fibo["38.2%"]; tp2 = fibo["23.6%"]; tp3 = fibo["0% High"]; sl = fibo["78.6%"]*0.99
-    if price >= fibo["50%"]: tp1=fibo["0% High"]; tp2=tp1*1.02; tp3=tp1*1.05; sl=fibo["38.2%"]
-    risk = price-sl if price-sl!=0 else 1
+    tp1=fibo["38.2%"]; tp2=fibo["23.6%"]; tp3=fibo["0% High"]; sl=fibo["78.6%"]*0.99
+    if price>=fibo["50%"]: tp1=fibo["0% High"]; tp2=tp1*1.02; tp3=tp1*1.05; sl=fibo["38.2%"]
+    risk=price-sl if price-sl!=0 else 1
     rr1=(tp1-price)/risk; rr2=(tp2-price)/risk; rr3=(tp3-price)/risk
-    text = f"📊 {ticker} | {price:.0f}\nHigh {high:.0f} Low {low:.0f}\nDekat: {closest[0]} {closest[1]:.0f}\n\n--- S & R ---\n"
-    for r in resistances[:3][::-1]: text+=f"Resistance: {r:.0f}\n"
-    text+=f"--> HARGA SEKARANG: {price:.0f}\n"
-    for i,s in enumerate(supports[:3]): text+=f"Support {i+1}: {s:.0f}\n"
-    text+="\n--- FIBONACCI MAP ---\n"
-    for k,v in fibo.items():
-        mark=" <-- KAMU" if k==closest[0] else ""
-        text+=f"{k:35} : {v:.0f}{mark}\n"
-    text+=f"\n--- TRADING PLAN ---\nEntry Ideal: {closest[1]:.0f} - {price:.0f}\nTP1 (38.2%): {tp1:.0f} | Cuan {(tp1/price-1)*100:.1f}% | RR 1:{rr1:.1f}\nTP2 (23.6%): {tp2:.0f} | Cuan {(tp2/price-1)*100:.1f}% | RR 1:{rr2:.1f}\nTP3 (High) : {tp3:.0f} | Cuan {(tp3/price-1)*100:.1f}% | RR 1:{rr3:.1f}\nSL         : {sl:.0f} | Rugi {(sl/price-1)*100:.1f}%\n\nRekomendasi: {'AKUMULASI' if rr1>1.5 else 'WAIT'}"
+    text=f"📊 {ticker} | {price:.0f}\nDekat: {closest[0]} {closest[1]:.0f}\n\n"
+    for r in resistances[:2][::-1]: text+=f"Resist: {r:.0f}\n"
+    text+=f"--> HARGA: {price:.0f}\n"
+    for i,s in enumerate(supports[:2]): text+=f"Support {i+1}: {s:.0f}\n"
+    text+=f"\n--- PLAN ---\nTP1 {tp1:.0f} +{(tp1/price-1)*100:.1f}% RR 1:{rr1:.1f}\nTP2 {tp2:.0f} +{(tp2/price-1)*100:.1f}% RR 1:{rr2:.1f}\nTP3 {tp3:.0f} +{(tp3/price-1)*100:.1f}% RR 1:{rr3:.1f}\nSL {sl:.0f} {(sl/price-1)*100:.1f}%"
     return text
 
 async def start(update, context): await update.message.reply_text("Ketik /analisa BBCA")
@@ -39,6 +46,12 @@ async def analisa(update, context):
     if not context.args: await update.message.reply_text("Pakai: /analisa BBCA"); return
     hasil = get_analisa(context.args[0]); await update.message.reply_text(hasil)
 
-app = ApplicationBuilder().token(TOKEN).build()
-app.add_handler(CommandHandler("start", start)); app.add_handler(CommandHandler("analisa", analisa))
-app.run_polling()
+def run_bot():
+    app = ApplicationBuilder().token(TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("analisa", analisa))
+    app.run_polling()
+
+if __name__ == "__main__":
+    Thread(target=run_flask).start()
+    run_bot()
